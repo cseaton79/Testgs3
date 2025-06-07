@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Golf Super Crew - CaddyShack Clan Stat Hub</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #111;
+      color: #eee;
+      padding: 10px;
+      margin: 0;
+    }
+    h1 {
+      font-size: 1.6rem;
+      text-align: center;
+      margin-bottom: 1rem;
+    }
+    .uploader {
+      background: #222;
+      border: 2px dashed #444;
+      padding: 1em;
+      text-align: center;
+      margin-bottom: 1em;
+    }
+    input[type="file"], input[type="text"] {
+      color: #eee;
+      background: #333;
+      border: none;
+      padding: 8px;
+      margin-top: 10px;
+      width: 100%;
+    }
+    .preview {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-bottom: 1em;
+    }
+    .preview img {
+      width: 100px;
+      border: 1px solid #555;
+    }
+    .leaderboard {
+      background: #1a1a1a;
+      border-radius: 8px;
+      padding: 1rem;
+    }
+    .player-row {
+      border-bottom: 1px solid #444;
+      padding: 0.5rem 0;
+    }
+    button {
+      background: #0f0;
+      color: #000;
+      font-weight: bold;
+      padding: 10px;
+      width: 100%;
+      font-size: 1rem;
+      border: none;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+    .debug {
+      white-space: pre-wrap;
+      font-size: 0.75rem;
+      margin-top: 1rem;
+      padding: 1rem;
+      background: #222;
+      border: 1px solid #333;
+    }
+  </style>
+</head>
+<body>
+  <h1>Golf Super Crew<br>CaddyShack Clan Stat Hub</h1>
+  <div class="uploader">
+    <p>Paste your OpenAI API key (kept local):</p>
+    <input type="text" id="apiKey" placeholder="sk-...">
+    <p>Upload a screenshot (one at a time):</p>
+    <input type="file" id="fileInput" accept="image/*">
+    <div class="preview" id="preview"></div>
+    <button onclick="extractOne()">Extract Stats from Image</button>
+    <button onclick="finalizePlayer()">Finalize Player</button>
+  </div>
+
+  <div class="leaderboard" id="leaderboard">
+    <h2>Leaderboard</h2>
+  </div>
+  <div class="debug" id="debug"></div>
+
+  <script>
+    const fileInput = document.getElementById("fileInput");
+    const preview = document.getElementById("preview");
+    const apiKeyInput = document.getElementById("apiKey");
+    const debug = document.getElementById("debug");
+    let playerAggregate = {};
+    let base64Image = "";
+
+    fileInput.addEventListener("change", () => {
+      preview.innerHTML = "";
+      const file = fileInput.files[0];
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        base64Image = e.target.result;
+        const img = document.createElement("img");
+        img.src = e.target.result;
+        preview.appendChild(img);
+      };
+      reader.readAsDataURL(file);
+    });
+
+    async function extractOne() {
+      const apiKey = apiKeyInput.value.trim();
+      if (!apiKey) return alert("Please enter your OpenAI API key.");
+      if (!base64Image) return alert("Please upload an image first.");
+
+      const prompt = "Extract ALL golf stats from this image as RAW JSON. Format: {\"player\": \"name\", \"stats\": {stat1: value1, stat2: value2...}}. Return ONLY raw JSON. No explanation.";
+
+      const messages = [{
+        role: "user",
+        content: [
+          { type: "text", text: prompt },
+          { type: "image_url", image_url: { url: base64Image } }
+        ]
+      }];
+
+      try {
+        const res = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${apiKey}`
+          },
+          body: JSON.stringify({
+            model: "gpt-4o",
+            messages,
+            max_tokens: 2000
+          })
+        });
+
+        const data = await res.json();
+        const content = data.choices?.[0]?.message?.content || "";
+        debug.textContent = "🧠 GPT Response:\n" + content;
+
+        const match = content.match(/\{[\s\S]*\}/);
+        if (!match) throw new Error("No JSON block found in response.");
+
+        const jsonText = match[0].replace(/[""]/g, '"');
+        const parsed = JSON.parse(jsonText);
+        Object.assign(playerAggregate, parsed);
+        alert("✅ Stats added. Upload the next image.");
+      } catch (err) {
+        alert("❌ Error: " + err.message);
+        debug.textContent += "\n\n❌ Error: " + err.message;
+      }
+    }
+
+    function finalizePlayer() {
+      const board = document.getElementById("leaderboard");
+      const row = document.createElement("div");
+      row.className = "player-row";
+      const stats = playerAggregate.stats || playerAggregate;
+      row.innerHTML = `
+        <strong>${playerAggregate.player || "Unnamed"}</strong><br>
+        ${Object.entries(stats).map(([k, v]) => `${k}: ${v}`).join("<br>")}
+      `;
+      board.appendChild(row);
+      playerAggregate = {};
+      preview.innerHTML = "";
+      alert("✅ Player added to leaderboard.");
+    }
+  </script>
+</body>
+</html>
